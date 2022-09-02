@@ -25,6 +25,8 @@ cyan = '#0033aa'
 darkgray = '#333333'
 lightgreen = '#77ff77'
 yellow = '#ffff00'
+bg_gray = '#444444'
+bg_dgray = '#333333'
 
 mode = 1  # 0 == 24h clock face, 1 == 12h clock face
 
@@ -89,13 +91,30 @@ def parse_time(hours, minutes, seconds):
 
 # animate clock
 def draw_clock(clock_canvas):
-    coord = 50, 50, clock_width-50, clock_height-50
+    def coord(value):
+        return value, value, clock_width-value, clock_height-value
+
+    mode_dict = {0:24, 1:12}
     center_radius = 50
     center = clock_width * 0.5 - center_radius, clock_height * 0.5 - center_radius, clock_width * 0.5 + center_radius, clock_height * 0.5 + center_radius
 
     # draw clock face
+    # clear background
     clock_canvas.create_rectangle(0, 0, window_width, window_height, fill=black)
-    clock_canvas.create_oval(coord, fill=darkgray, outline=darkgray, width=0)
+
+    # draw hour arcs
+    for i in range(mode_dict[mode]):
+        x = i*(360/mode_dict[mode])
+        y = 360/mode_dict[mode]
+        if i % 2 == 0:
+            fillcolor = bg_dgray
+        else:
+            fillcolor = bg_gray
+
+        clock_canvas.create_arc(coord(50), start=90-x, extent=-y, fill=fillcolor, outline='', width=0)
+
+    # draw clock background
+    clock_canvas.create_oval(coord(60), fill=darkgray, outline=darkgray, width=0)
 
     # draw events
     now = time.localtime()
@@ -117,13 +136,14 @@ def draw_clock(clock_canvas):
         # highlight active events
         # if (x <= arm_angle <= x+y) and (event.time_hour == now.tm_hour):
         if (x <= arm_angle <= x+y):
-            clock_canvas.create_arc(coord, start=90-x, extent=-y, fill=event['color'], outline='', width=0)
+            clock_canvas.create_arc(coord(60), start=90-x, extent=-y, fill=event['color'], outline='', width=0)
             clock_canvas.create_rectangle(clock_width+10, i*100+20, window_width, i*100+85, fill=event['color'])
+            # draw NOW with a black outline
             clock_canvas.create_text(clock_width+44, i*100+56, text=f'NOW', fill=black, font=('Helvetica 15 bold'))
             clock_canvas.create_text(clock_width+46, i*100+54, text=f'NOW', fill=black, font=('Helvetica 15 bold'))
             clock_canvas.create_text(clock_width+45, i*100+55, text=f'NOW', fill=white, font=('Helvetica 15 bold'))
         else:
-            clock_canvas.create_arc(coord, start=90-x, extent=-y, fill=event['color'], outline='', width=0, stipple='gray25')
+            clock_canvas.create_arc(coord(60), start=90-x, extent=-y, fill=event['color'], outline='', width=0, stipple='gray25')
             clock_canvas.create_rectangle(clock_width+10, i*100+20, window_width, i*100+85, fill=event['color'], stipple='gray25')
         clock_canvas.create_rectangle(clock_width+80, i*100+20, window_width, i*100+80, fill=black)
         clock_canvas.create_text(clock_width - 20 + ((window_width-clock_width)*0.5), i*100+55, text=event['name'], fill=white, font=('Helvetica 20 bold'))
