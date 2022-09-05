@@ -36,6 +36,12 @@ events = {
     2:  {'name': 'Lunch',      'time_hour': 12, 'time_minute': 00,  'duration': 60, 'color': lightgreen},
     3:  {'name': 'Early thing','time_hour': 7,  'time_minute': 30,  'duration': 30, 'color': yellow},
     4:  {'name': 'Meeting 2',  'time_hour': 13, 'time_minute': 20,  'duration': 20, 'color': white},
+    5:  {'name': 'Nightly',    'time_hour': 23, 'time_minute': 20,  'duration': 95, 'color': black},
+    6:  {'name': 'Nightly2',   'time_hour': 17, 'time_minute': 20,  'duration': 95, 'color': black},
+    7:  {'name': 'Nightly3',   'time_hour': 23, 'time_minute': 20,  'duration': 95, 'color': cyan},
+    8:  {'name': 'Nightly4',   'time_hour': 17, 'time_minute': 20,  'duration': 95, 'color': cyan},
+    9:  {'name': 'Nightly5',   'time_hour': 23, 'time_minute': 20,  'duration': 95, 'color': yellow},
+    10: {'name': 'Nightly6',   'time_hour': 17, 'time_minute': 20,  'duration': 95, 'color': yellow}
 }
 
 
@@ -122,13 +128,44 @@ def draw_clock(clock_canvas):
     # arm_angle, _ = event_to_arc(now.tm_min, now.tm_sec, 0, 0)  # quick test mode
 
     # sort events by start time
+    # divide clock face to 5-min slots
+    timeslot_list = [0] * 12 * mode_dict[mode]
+    max_overlap = 0
     event_list = []
     for key, value in events.items():
         h, m, _ = parse_time(value['time_hour'], value['time_minute'], 0)
         events[key]['timecode'] = h+m
         event_list.append(value)
 
-    event_list = sorted(event_list, key=lambda k: k['timecode'])
+        # reserve 5-min slots according to duration
+        slot_start = abs(value['time_hour'] - mode_dict[mode]) * 12 + math.floor(value['time_minute'] / 5)
+        slot_duration = math.ceil(value['duration'] / 5)
+
+        # also handle events that cross midnight
+        slot_chunks = [None, None]
+        if slot_start + slot_duration > len(timeslot_list):
+            slot_chunks[0] = timeslot_list[slot_start::]
+            slot_chunks[1] = timeslot_list[0:slot_start+slot_duration-len(timeslot_list)]
+        else:
+            slot_chunks[0] = timeslot_list[slot_start:slot_start+slot_duration]
+        # print(slot_chunks)
+        overlap = 0
+        for i, chunk in enumerate(slot_chunks):
+            if chunk is not None:
+                if max(chunk) > overlap:
+                    overlap = max(chunk)
+                slot_chunks[i] = [overlap + 1] * len(chunk)
+        if slot_chunks[1] is not None:
+            timeslot_list[slot_start::] = slot_chunks[0]
+            timeslot_list[0:len(slot_chunks[1])] = slot_chunks[1]
+        else: 
+            timeslot_list[slot_start:slot_start+slot_duration:1] = slot_chunks[0]
+
+        events[key]['overlap'] = overlap
+        if overlap > max_overlap:
+            max_overlap = overlap
+
+    event_list = sorted(event_list, key=lambda k: k['overlap'])
 
     for i, event in enumerate(event_list):
         x, y = event_to_arc(event['time_hour'], event['time_minute'], 0, event['duration'])
@@ -136,14 +173,14 @@ def draw_clock(clock_canvas):
         # highlight active events
         # if (x <= arm_angle <= x+y) and (event.time_hour == now.tm_hour):
         if (x <= arm_angle <= x+y):
-            clock_canvas.create_arc(coord(60), start=90-x, extent=-y, fill=event['color'], outline='', width=0)
+            clock_canvas.create_arc(coord(60 + event['overlap'] * (clock_width * 0.5 / (max_overlap + 1) - center_radius)), start=90-x, extent=-y, fill=event['color'], outline='', width=0)
             clock_canvas.create_rectangle(clock_width+10, i*100+20, window_width, i*100+85, fill=event['color'])
             # draw NOW with a black outline
             clock_canvas.create_text(clock_width+44, i*100+56, text=f'NOW', fill=black, font=('Helvetica 15 bold'))
             clock_canvas.create_text(clock_width+46, i*100+54, text=f'NOW', fill=black, font=('Helvetica 15 bold'))
             clock_canvas.create_text(clock_width+45, i*100+55, text=f'NOW', fill=white, font=('Helvetica 15 bold'))
         else:
-            clock_canvas.create_arc(coord(60), start=90-x, extent=-y, fill=event['color'], outline='', width=0, stipple='gray25')
+            clock_canvas.create_arc(coord(60 + event['overlap'] * (clock_width * 0.5 / (max_overlap + 1) - center_radius)), start=90-x, extent=-y, fill=event['color'], outline='', width=0, stipple='gray25')
             clock_canvas.create_rectangle(clock_width+10, i*100+20, window_width, i*100+85, fill=event['color'], stipple='gray25')
         clock_canvas.create_rectangle(clock_width+80, i*100+20, window_width, i*100+80, fill=black)
         clock_canvas.create_text(clock_width - 20 + ((window_width-clock_width)*0.5), i*100+55, text=event['name'], fill=white, font=('Helvetica 20 bold'))
