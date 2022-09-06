@@ -16,6 +16,8 @@ window_width = 1200
 window_height = 800
 clock_width = 800
 clock_height = 800
+clock_digital = None
+clock_arm = None
 
 black = '#000000'
 white = '#ffffff'
@@ -95,18 +97,18 @@ def parse_time(hours, minutes, seconds):
     return unit_strings[0], unit_strings[1], unit_strings[2]
 
 
-# animate clock
 def draw_clock(clock_canvas):
     def coord(value):
         return value, value, clock_width-value, clock_height-value
 
+    global clock_digital, clock_arm
     mode_dict = {0:24, 1:12}
     center_radius = 50
     center = clock_width * 0.5 - center_radius, clock_height * 0.5 - center_radius, clock_width * 0.5 + center_radius, clock_height * 0.5 + center_radius
 
     # draw clock face
     # clear background
-    clock_canvas.create_rectangle(0, 0, window_width, window_height, fill=black)
+    clock_canvas.delete("all")
 
     # draw hour arcs
     for i in range(mode_dict[mode]):
@@ -165,41 +167,59 @@ def draw_clock(clock_canvas):
         if overlap > max_overlap:
             max_overlap = overlap
 
-    event_list = sorted(event_list, key=lambda k: k['overlap'])
-
-    for i, event in enumerate(event_list):
+    # draw events on clock face
+    event_list_clock = sorted(event_list, key=lambda k: k['overlap'])
+    for i, event in enumerate(event_list_clock):
         x, y = event_to_arc(event['time_hour'], event['time_minute'], 0, event['duration'])
 
         # highlight active events
         # if (x <= arm_angle <= x+y) and (event.time_hour == now.tm_hour):
         if (x <= arm_angle <= x+y):
             clock_canvas.create_arc(coord(60 + event['overlap'] * (clock_width * 0.5 / (max_overlap + 1) - center_radius)), start=90-x, extent=-y, fill=event['color'], outline='', width=0)
+        else:
+            clock_canvas.create_arc(coord(60 + event['overlap'] * (clock_width * 0.5 / (max_overlap + 1) - center_radius)), start=90-x, extent=-y, fill=event['color'], outline='', width=0, stipple='gray25')
+
+    # draw event stack
+    event_list_stack = sorted(event_list, key=lambda k: k['timecode'])
+    for i, event in enumerate(event_list_stack):
+        # highlight active events
+        # if (x <= arm_angle <= x+y) and (event.time_hour == now.tm_hour):
+        if (x <= arm_angle <= x+y):
             clock_canvas.create_rectangle(clock_width+10, i*100+20, window_width, i*100+85, fill=event['color'])
             # draw NOW with a black outline
             clock_canvas.create_text(clock_width+44, i*100+56, text=f'NOW', fill=black, font=('Helvetica 15 bold'))
             clock_canvas.create_text(clock_width+46, i*100+54, text=f'NOW', fill=black, font=('Helvetica 15 bold'))
             clock_canvas.create_text(clock_width+45, i*100+55, text=f'NOW', fill=white, font=('Helvetica 15 bold'))
         else:
-            clock_canvas.create_arc(coord(60 + event['overlap'] * (clock_width * 0.5 / (max_overlap + 1) - center_radius)), start=90-x, extent=-y, fill=event['color'], outline='', width=0, stipple='gray25')
             clock_canvas.create_rectangle(clock_width+10, i*100+20, window_width, i*100+85, fill=event['color'], stipple='gray25')
         clock_canvas.create_rectangle(clock_width+80, i*100+20, window_width, i*100+80, fill=black)
         clock_canvas.create_text(clock_width - 20 + ((window_width-clock_width)*0.5), i*100+55, text=event['name'], fill=white, font=('Helvetica 20 bold'))
         h, m, _ = parse_time(event['time_hour'], event['time_minute'], 0)
         clock_canvas.create_text(window_width-50, i*100+55, text=f'{h}:{m}', fill=white, font=('Helvetica 20 bold'))
 
-
     # draw clock arm
     arm_length = 400
     clock_canvas.create_oval(center, fill=orange, outline=orange, width=2)
     x2 = arm_length * math.cos(math.radians(arm_angle) - math.radians(90)) + clock_width * 0.5
     y2 = arm_length * math.sin(math.radians(arm_angle) - math.radians(90)) + clock_height * 0.5
-    clock_canvas.create_line(clock_width*0.5, clock_height*0.5, x2, y2, width=5, fill=orange)
+    clock_arm = clock_canvas.create_line(clock_width*0.5, clock_height*0.5, x2, y2, width=5, fill=orange)
 
     # draw digital clock
     h, m, s = parse_time(now.tm_hour, now.tm_min, now.tm_sec)
-    clock_canvas.create_text(clock_width*0.5, clock_height*0.5, text=f'{h}:{m}:{s}', fill=black, font=('Helvetica 15 bold'))
+    clock_digital = clock_canvas.create_text(clock_width*0.5, clock_height*0.5, text=f'{h}:{m}:{s}', fill=black, font=('Helvetica 15 bold'))
 
-    # canvas.after(100000, draw_clock(canvas))
+
+# animate clock
+def update_clock_face(clock_canvas):
+    now = time.localtime()
+    h, m, s = parse_time(now.tm_hour, now.tm_min, now.tm_sec)
+    clock_canvas.itemconfigure(clock_digital, text=f'{h}:{m}:{s}')
+
+    arm_length = 400
+    arm_angle, _ = event_to_arc(now.tm_hour, now.tm_min, now.tm_sec, 0)
+    x2 = arm_length * math.cos(math.radians(arm_angle) - math.radians(90)) + clock_width * 0.5
+    y2 = arm_length * math.sin(math.radians(arm_angle) - math.radians(90)) + clock_height * 0.5
+    clock_canvas.coords(clock_arm, clock_width*0.5, clock_height*0.5, x2, y2)
 
 
 exit_handler = ExitHandler()
@@ -210,9 +230,12 @@ if __name__ == '__main__':
     clock_window = create_clock_window()
     clock_canvas = create_clock_canvas(clock_window)
 
+    # draw clock bg
+    draw_clock(clock_canvas)
+
     while not exit_handler.kill_now:
-        draw_clock(clock_canvas)
         clock_canvas.update()
         time.sleep(1.0)
+        update_clock_face(clock_canvas)
 
     # clock_window.mainloop()
