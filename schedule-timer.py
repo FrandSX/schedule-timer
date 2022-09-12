@@ -19,6 +19,7 @@ clock_height = 800
 clock_digital = None
 clock_arm = None
 clock_arm_length = 400
+refresh_seconds = 0.1
 
 max_overlap = 0
 
@@ -49,6 +50,8 @@ events = {
     10: {'name': 'Nightly6',   'time_hour': 17, 'time_minute': 20,  'duration': 95, 'color': yellow}
 }
 
+event_bricks = []
+
 
 class ExitHandler:
     kill_now = False
@@ -78,6 +81,16 @@ def create_clock_canvas(window):
     return canvas
     
 
+# Initialize event adding window
+def create_event_window():
+    window = tk.Tk()
+    window.title('Add Event')
+    window.geometry(f'{400}x{300}')
+    window.configure(bg=black)
+    return window
+
+
+
 # conversion logic
 def event_to_arc(hours, minutes, seconds, duration):
     mode_dict = {0:86400, 1:43200}
@@ -98,6 +111,79 @@ def parse_time(hours, minutes, seconds):
             unit_strings[i] = str(unit)
 
     return unit_strings[0], unit_strings[1], unit_strings[2]
+
+
+def rgb_to_hsl(in_rgba):
+    R = in_rgba[0]
+    G = in_rgba[1]
+    B = in_rgba[2]
+    Cmax = max(R, G, B)
+    Cmin = min(R, G, B)
+
+    H = 0.0
+    S = 0.0
+    L = (Cmax+Cmin)/2.0
+
+    if L == 1.0:
+        S = 0.0
+    elif 0.0 < L < 0.5:
+        S = (Cmax-Cmin)/(Cmax+Cmin)
+    elif L >= 0.5:
+        S = (Cmax-Cmin)/(2.0-Cmax-Cmin)
+
+    if S > 0.0:
+        if R == Cmax:
+            H = ((G-B)/(Cmax-Cmin))*60.0
+        elif G == Cmax:
+            H = ((B-R)/(Cmax-Cmin)+2.0)*60.0
+        elif B == Cmax:
+            H = ((R-G)/(Cmax-Cmin)+4.0)*60.0
+
+    return [H/360.0, S, L]
+
+
+def hsl_to_rgb(in_value):
+    H, S, L = in_value
+
+    v1 = 0.0
+    v2 = 0.0
+
+    rgb = [0.0, 0.0, 0.0]
+
+    if S == 0.0:
+        rgb = [L, L, L]
+    else:
+        if L < 0.5:
+            v1 = L*(S+1.0)
+        elif L >= 0.5:
+            v1 = L+S-L*S
+
+        v2 = 2.0*L-v1
+
+        # H = H/360.0
+
+        tR = H + 0.333333
+        tG = H
+        tB = H - 0.333333
+
+        tList = [tR, tG, tB]
+
+        for i, t in enumerate(tList):
+            if t < 0.0:
+                t += 1.0
+            elif t > 1.0:
+                t -= 1.0
+
+            if t*6.0 < 1.0:
+                rgb[i] = v2+(v1-v2)*6.0*t
+            elif t*2.0 < 1.0:
+                rgb[i] = v1
+            elif t*3.0 < 2.0:
+                rgb[i] = v2+(v1-v2)*(0.666666 - t)*6.0
+            else:
+                rgb[i] = v2
+
+    return rgb
 
 
 # sort events
@@ -186,10 +272,9 @@ def draw_clock(clock_canvas):
         # if (x <= arm_angle <= x+y) and (event.time_hour == now.tm_hour):
         if (x <= arm_angle <= x+y):
             clock_canvas.create_arc(coord(60 + event['overlap'] * (clock_width * 0.5 / (max_overlap + 1) - center_radius)), start=90-x, extent=-y, fill=event['color'], outline='', width=0)
-            clock_canvas.create_arc(coord(60 + (event['overlap'] + 1) * (clock_width * 0.5 / (max_overlap + 1) - center_radius)), start=90-x+10, extent=-y-10, fill=darkgray, outline='', width=0)
         else:
             clock_canvas.create_arc(coord(60 + event['overlap'] * (clock_width * 0.5 / (max_overlap + 1) - center_radius)), start=90-x, extent=-y, fill=event['color'], outline='', width=0, stipple='gray25')
-            clock_canvas.create_arc(coord(60 + (event['overlap'] + 1) * (clock_width * 0.5 / (max_overlap + 1) - center_radius)), start=90-x+10, extent=-y-10, fill=darkgray, outline='', width=0)
+        clock_canvas.create_arc(coord(60 + (event['overlap'] + 1) * (clock_width * 0.5 / (max_overlap + 1) - center_radius)), start=90-x+10, extent=-y-10, fill=darkgray, outline='', width=0)
 
     # draw event stack
     for i, event in enumerate(event_list_stack):
@@ -226,11 +311,28 @@ def draw_clock(clock_canvas):
     h, m, s = parse_time(now.tm_hour, now.tm_min, now.tm_sec)
     clock_digital = clock_canvas.create_text(clock_width*0.5, clock_height*0.5, text=f'{h}:{m}:{s}', fill=black, font=('Helvetica 15 bold'))
 
+    # draw add button
+    add_event_button = tk.Button(clock_window, cursor='hand2', text='+', width=3, height=1, bd='0', bg=black, fg=white, font=('Helvetica 35 bold'), command=create_event_window())
+    add_event_button.place(x=20, y=20)
+
 
 # animate clock
 def update_clock_face(clock_canvas):
     now = time.localtime()
     h, m, s = parse_time(now.tm_hour, now.tm_min, now.tm_sec)
+    arm_angle, _ = event_to_arc(now.tm_hour, now.tm_min, now.tm_sec, 0)
+
+    for brick in enumerate(event_bricks):
+        x = 90 - brick.start
+        y = -brick.extent
+
+        # highlight active events
+        # if (x <= arm_angle <= x+y) and (event.time_hour == now.tm_hour):
+        if (x <= arm_angle <= x+y):
+            clock_canvas.itemconfigure(brick, stipple='')
+        else:
+            clock_canvas.itemconfigure(brick, stipple='gray25')
+
     clock_canvas.itemconfigure(clock_digital, text=f'{h}:{m}:{s}')
 
     arm_angle, _ = event_to_arc(now.tm_hour, now.tm_min, now.tm_sec, 0)
@@ -253,5 +355,5 @@ if __name__ == '__main__':
     # update dynamic elements in a loop
     while not exit_handler.kill_now:
         clock_canvas.update()
-        time.sleep(1.0)
+        time.sleep(refresh_seconds)
         update_clock_face(clock_canvas)
